@@ -46,7 +46,7 @@ public :
 	int address;
 	bool if_global;
 	bool if_const=false;
-	int instanceValue;
+	int instanceValue=0;
 
 	Var(std::string name,bool global=false) {
 		this->name = name;
@@ -65,7 +65,7 @@ public :
 class arrayVar {
 public:
 	std::string name;
-	int address;
+	int address=10000;
 	std::list<int>* dimentions;
 	int totalSize;
 	bool if_global;
@@ -157,6 +157,18 @@ public:
 	}
 };
 
+/*class initData {
+	virtual std::string render() = 0;
+};
+
+class more_data :public initData{
+
+};
+
+class one_data :public initData {
+
+};*/
+
 /*class Data{
 public :
 	std::string cname;
@@ -205,7 +217,7 @@ public:
 	virtual std::string render(int indent) = 0;
 };*/
 
-class LabelStmt:public  irStmt {
+class LabelStmt:public irStmt {
 public :
 	//LabelStmt* a;
 	std::string name;
@@ -509,10 +521,12 @@ public:
 
 class irBlock {
 public:
-	//irBlock* a;
 	std::list<irStmt*>* stmts;
 	LabelStmt* label;
-
+	std::list<irBlock*>* incoming = new std::list<irBlock*>();
+	irBlock* outgoingDirect;//自然顺序
+	irBlock* outgoingCond;//条件判断跳转顺序
+	int postorderIndex;
 	irBlock(std::list<irStmt*>* stmts) {
 		this->stmts = stmts;
 	}
@@ -520,12 +534,25 @@ public:
 	std::string render(int indent) {
 		std::string sb = "";
 		sb = doIndent(sb, indent);
-		/*if (label != nullptr)
+		if (label != nullptr)
 			sb.append(label->render(indent));
 		for (irStmt* stmt :  *stmts) {
 			sb.append(stmt->render(indent));
-		}*/
+		}
 		return sb;
+	}
+
+	std::list<irBlock*>* getOutgoing() {
+		std::list<irBlock*>* out = new std::list<irBlock*>();
+		if (outgoingDirect != nullptr)
+			out->push_back(outgoingDirect);
+		if (outgoingCond != nullptr)
+			out->push_back(outgoingCond);
+		return out;
+	}
+	std::string toString()	
+	{
+		return "Block(" + (label != nullptr ? label->name : "???") + ")";
 	}
 };
 
@@ -535,6 +562,9 @@ public:
 	std::string name;
 	std::list<irDecl*>* args;
 	std::list<irBlock*>* blocks;
+	std::list<irBlock*>* blocksPre;
+	std::list<irBlock*>* blocksPo;
+	std::list<irBlock*>* blocksRpo;
 	bool jump;
 
 	Meth(type retTyp, std::string name, std::list<irDecl*>* args, std::list<irStmt*>* stmts, bool jump) {
@@ -573,8 +603,8 @@ public:
 			sb.append(tmp);
 		}
 		sb.append("){\n");
-		for (irStmt* s : *(blocks->front()->stmts)) {
-			sb.append(s->render(indent + 1));
+		for (irBlock* block : *blocks) {
+			sb.append(block->render(indent+1));
 		}
 		sb = doIndent(sb, indent);
 		sb.append("}\n");

@@ -82,13 +82,13 @@ public :
 		methMap->insert(std::pair<std::string, type>("getint", _int));
 		methMap->insert(std::pair<std::string, type>("getch", _int));
 		methMap->insert(std::pair<std::string, type>("getarray", _int));
-		methMap->insert(std::pair<std::string, type>("rand", _int));
 		methMap->insert(std::pair<std::string, type>("putint", _void));
 		methMap->insert(std::pair<std::string, type>("putch", _void));
 		methMap->insert(std::pair<std::string, type>("putarray", _void));
 		methMap->insert(std::pair<std::string, type>("putf", _void));
 		methMap->insert(std::pair<std::string, type>("starttime", _void));
 		methMap->insert(std::pair<std::string, type>("stoptime", _void));
+		methMap->insert(std::pair<std::string, type>("cout", _void));
 		int length = prog->len();
 		for (int i = 0; i < length; i++) {
 			int len;
@@ -235,167 +235,108 @@ private:
 
 	}
 
-	void doDecl(Decl u1, std::list<irStmt*>* declBlock,bool global=false) {
-		constVarDecl* c = dynamic_cast<constVarDecl*>(u1);
-		if (c != nullptr) {
-			for (int j = 0; j < c->e1->len(); j++) {
-				int len;
-				VarDef def = c->e1->nth_length(j, len);
-				uninit_VarDef* _uninit = dynamic_cast<uninit_VarDef*>(def);
-				if (_uninit != nullptr) {
-					id* _id = dynamic_cast<id*>(_uninit->e1);
-					if (_uninit->e2->len() == 0) {
-						Var* newVar = new Var((_id->e1), global);
-						irStmt* pt = new irVarDecl(newVar);
-						this->dataMap->insert(std::pair<std::string, Var*>(this->curr_func_name + _id->e1, newVar));
-						declBlock->push_back(pt);
-					}
-					else {
-						std::list<int>* dimension = new std::list<int>();
-						for (int k = 0; k < _uninit->e2->len(); k++) {
-							AddExp exp = _uninit->e2->nth_length(k, len);
-							Rval* res = doAddExp(exp, declBlock);
-							IntLitRval* val = dynamic_cast<IntLitRval*>(res);
-							dimension->push_back(val->i);
-						}
-						arrayVar* newArr = new arrayVar(_id->e1, dimension, global);
-
-						this->arrayMap->insert(std::pair<std::string, arrayVar*>(this->curr_func_name + _id->e1, newArr));
-						irStmt* pt = new irArrayDecl(newArr);
-						declBlock->push_back(pt);
-					}
-				}
-				init_VarDef* _init = dynamic_cast<init_VarDef*>(def);
-				//std::cout << "lvar name:" << _init->e1 << std::endl;
-				if (_init != nullptr) {
-					id* _id = dynamic_cast<id*>(_init->e1);
-					if (_init->e2->len() == 0) {
-						one_InitVal* val = dynamic_cast<one_InitVal*>(_init->e3);
-						if (val != nullptr) {
-							Var* v = new Var((_id->e1), global);
-							v->if_const = true;
-							this->dataMap->insert(std::pair<std::string, Var*>(this->curr_func_name + _id->e1, v));
-
-							Rval* res = doAddExp(val->e1, declBlock);
-							IntLitRval* _int = dynamic_cast<IntLitRval*>(res);
-							if (_int != nullptr) {
-								v->instanceValue = _int->i;
-							}
-							irStmt* pt1 = new irVarDecl(v);
-							declBlock->push_back(pt1);
-						}
-					}
-					else {
-						std::list<int>* dimension = new std::list<int>();
-						for (int k = 0; k < _init->e2->len(); k++) {
-							AddExp exp = _init->e2->nth_length(k, len);
-							Rval* res = doAddExp(exp, declBlock);
-							IntLitRval* val = dynamic_cast<IntLitRval*>(res);
-							if (val != nullptr)
-								dimension->push_back(val->i);
-
-						}
-						arrayVar* newArr = new arrayVar(_id->e1, dimension, global);
-						this->arrayMap->insert(std::pair<std::string, arrayVar*>(this->curr_func_name + _id->e1, newArr));
-						irArrayDecl* pt = new irArrayDecl(newArr);
-						declBlock->push_back(pt);
-
-						more_InitVal* val = dynamic_cast<more_InitVal*>(_init->e3);
-						if (val != nullptr) {
-							std::list<Rval*>* init_data = new std::list<Rval*>();
-							for (int k = 0; k < val->e1->len(); k++) {
-								InitVal exp = val->e1->nth_length(k, len);
-								one_InitVal* one = dynamic_cast<one_InitVal*>(exp);
-								if (one == nullptr) {
-									std::cout << "error at initval" << std::endl;
-									continue;
-								}
-								Rval* res = doAddExp(one->e1, declBlock);
-								init_data->push_back(res);
-							}
-							declBlock->push_back(new arrayInitStmt(pt, init_data));
-						}
-					}
-				}
+	void doArrInit(more_InitVal* data,std::list<Rval*>* _list,std::list<irStmt*>* declBlock) {
+		for (int i = 0; i < data->e1->len();i++) {
+			int len;
+			InitVal val = data->e1->nth_length(i, len);
+			one_InitVal* one = dynamic_cast<one_InitVal*>(val);
+			more_InitVal* more = dynamic_cast<more_InitVal*>(val);
+			if (one != nullptr) {
+				Rval* res = doAddExp(one->e1, declBlock);
+				_list->push_back(res);
+			}
+			if (more != nullptr) {
+				doArrInit(more, _list, declBlock);
 			}
 		}
-		
+	}
 
-		varDecl* v = dynamic_cast<varDecl*>(u1);
-		if (v != nullptr) {
-			for (int j = 0; j < v->e1->len(); j++) {
-				int len;
-				VarDef def = v->e1->nth_length(j, len);
-				uninit_VarDef* _uninit = dynamic_cast<uninit_VarDef*>(def);
-				if (_uninit != nullptr) {
-					id* _id = dynamic_cast<id*>(_uninit->e1);
-					if (_uninit->e2->len() == 0) {
-						Var* newVar = new Var((_id->e1), global);
-						irStmt* pt = new irVarDecl(newVar);
-						this->dataMap->insert(std::pair<std::string, Var*>(this->curr_func_name + _id->e1, newVar));
-						declBlock->push_back(pt);
-					}
-					else {
-						std::list<int>* dimension = new std::list<int>();
-						for (int k = 0; k < _uninit->e2->len(); k++) {
-							AddExp exp = _uninit->e2->nth_length(k, len);
-							Rval* res = doAddExp(exp, declBlock);
-							IntLitRval* val = dynamic_cast<IntLitRval*>(res);
-							dimension->push_back(val->i);
-						}
-						arrayVar* newArr = new arrayVar(_id->e1, dimension, global);
-
-						this->arrayMap->insert(std::pair<std::string, arrayVar*>(this->curr_func_name + _id->e1, newArr));
-						irStmt* pt = new irArrayDecl(newArr);
-						declBlock->push_back(pt);
-					}
+	void doDecl(Decl u1, std::list<irStmt*>* declBlock,bool global=false) {
+		constVarDecl* cc = dynamic_cast<constVarDecl*>(u1);
+		varDecl* vv = dynamic_cast<varDecl*>(u1);
+		VarDefs defs;
+		if (cc != nullptr) {
+			defs = cc->e1;
+		}
+		if (vv != nullptr) {
+			defs = vv->e1;
+		}
+		for (int j = 0; j < defs->len(); j++) {
+			int len;
+			VarDef def = defs->nth_length(j, len);
+			uninit_VarDef* _uninit = dynamic_cast<uninit_VarDef*>(def);
+			init_VarDef* _init = dynamic_cast<init_VarDef*>(def);
+			if (_uninit != nullptr) {
+				id* _id = dynamic_cast<id*>(_uninit->e1);
+				if (_uninit->e2->len() == 0) {
+					Var* newVar = new Var((_id->e1), global);
+					irStmt* pt = new irVarDecl(newVar);
+					this->dataMap->insert(std::pair<std::string, Var*>(this->curr_func_name + _id->e1, newVar));
+					declBlock->push_back(pt);
 				}
-				init_VarDef* _init = dynamic_cast<init_VarDef*>(def);
-				//std::cout << "lvar name:" << _init->e1 << std::endl;
-				if (_init != nullptr) {
-					id* _id = dynamic_cast<id*>(_init->e1);
-					if (_init->e2->len() == 0) {
-						one_InitVal* val = dynamic_cast<one_InitVal*>(_init->e3);
-						if (val != nullptr) {
-							Rval* res = doAddExp(val->e1, declBlock);
-							Var* v = new Var((_id->e1), global);
-							this->dataMap->insert(std::pair<std::string, Var*>(this->curr_func_name + _id->e1, v));
+				else {
+					std::list<int>* dimension = new std::list<int>();
+					int totalSize = 1;
+					for (int k = 0; k < _uninit->e2->len(); k++) {
+						AddExp exp = _uninit->e2->nth_length(k, len);
+						Rval* res = doAddExp(exp, declBlock);
+						IntLitRval* val = dynamic_cast<IntLitRval*>(res);
+						dimension->push_back(val->i);
+						totalSize *= val->i;
+					}
+					arrayVar* newArr = new arrayVar(_id->e1, dimension, global);
+					newArr->totalSize = totalSize;
+					this->arrayMap->insert(std::pair<std::string, arrayVar*>(this->curr_func_name + _id->e1, newArr));
+					irStmt* pt = new irArrayDecl(newArr);
+					declBlock->push_back(pt);
+				}
+			}
+			if (_init != nullptr) {
+				id* _id = dynamic_cast<id*>(_init->e1);
+				if (_init->e2->len() == 0) {
+					one_InitVal* val = dynamic_cast<one_InitVal*>(_init->e3);
+					if (val != nullptr) {
+						Rval* res = doAddExp(val->e1, declBlock);
+						Var* v = new Var((_id->e1), global);
+						this->dataMap->insert(std::pair<std::string, Var*>(this->curr_func_name + _id->e1, v));
+						if (vv != nullptr) {
+							irStmt* pt1 = new irVarDecl(v);
+							irStmt* pt2 = new numberAssignStmt(v, res);
+							declBlock->push_back(pt1);
+							declBlock->push_back(pt2);
+						}
+						if (cc != nullptr) {
+							v->if_const = true;
+							IntLitRval* _int = dynamic_cast<IntLitRval*>(res);
+							v->instanceValue = _int->i;
 							irStmt* pt1 = new irVarDecl(v);
 							irStmt* pt2 = new numberAssignStmt(v, res);
 							declBlock->push_back(pt1);
 							declBlock->push_back(pt2);
 						}
 					}
-					else {
-						std::list<int>* dimension = new std::list<int>();
-						for (int k = 0; k < _init->e2->len(); k++) {
-							AddExp exp = _init->e2->nth_length(k, len);
-							Rval* res = doAddExp(exp, declBlock);
-							IntLitRval* val = dynamic_cast<IntLitRval*>(res);
-							dimension->push_back(val->i);
-						}
-						arrayVar* newArr = new arrayVar(_id->e1, dimension, global);
-						this->arrayMap->insert(std::pair<std::string, arrayVar*>(this->curr_func_name + _id->e1, newArr));
-						irArrayDecl* pt = new irArrayDecl(newArr);
-						declBlock->push_back(pt);
-
-						more_InitVal* val = dynamic_cast<more_InitVal*>(_init->e3);
-						if (val != nullptr) {
-							this->curr_func_bl = true;
-							std::list<Rval*>* init_data = new std::list<Rval*>();
-							for (int k = 0; k < val->e1->len(); k++) {
-								InitVal exp = val->e1->nth_length(k, len);
-								one_InitVal* one = dynamic_cast<one_InitVal*>(exp);
-								if (one == nullptr) {
-									std::cout << "error at initval" << std::endl;
-									continue;
-								}
-								Rval* res = doAddExp(one->e1, declBlock);
-								init_data->push_back(res);
-							}
-							declBlock->push_back(new arrayInitStmt(pt, init_data));
-						}
+				}
+				else {
+					std::list<int>* dimension = new std::list<int>();
+					int totalSize = 1;
+					for (int k = 0; k < _init->e2->len(); k++) {
+						AddExp exp = _init->e2->nth_length(k, len);
+						Rval* res = doAddExp(exp, declBlock);
+						IntLitRval* val = dynamic_cast<IntLitRval*>(res);
+						dimension->push_back(val->i);
+						totalSize *= val->i;
 					}
+					arrayVar* newArr = new arrayVar(_id->e1, dimension, global);
+					newArr->totalSize = totalSize;
+					this->arrayMap->insert(std::pair<std::string, arrayVar*>(this->curr_func_name + _id->e1, newArr));
+					irArrayDecl* pt = new irArrayDecl(newArr);
+					declBlock->push_back(pt);
+
+					std::list<Rval*>* init_data = new std::list<Rval*>();
+					more_InitVal* val = dynamic_cast<more_InitVal*>(_init->e3);
+					this->curr_func_bl = true;
+					doArrInit(val, init_data, declBlock); 
+					declBlock->push_back(new arrayInitStmt(pt, init_data));
 				}
 			}
 		}
@@ -808,10 +749,12 @@ private:
 				return new RvalChunk(new VarRval(t), nextjumps);
 			}
 
-			LabelStmt* label = new LabelStmt("l" + std::to_string(labelCounters++));
-			stmts->push_back(label);
-			addJump(left->nextjumps, label);
-			addJump(right->nextjumps, label);
+			if (left->nextjumps->size() > 0 || right->nextjumps->size() > 0) {
+				LabelStmt* label = new LabelStmt("l" + std::to_string(labelCounters++));
+				stmts->push_back(label);
+				addJump(left->nextjumps, label);
+				addJump(right->nextjumps, label);
+			}
 
 			Var* t = new Var("t" + std::to_string( getTmpIndex()));
 			stmts->push_back(new irVarDecl(t));
@@ -907,9 +850,11 @@ private:
 				return new RvalChunk(new VarRval(t), nextjumps);
 			}
 
-			LabelStmt* label = new LabelStmt("l" + std::to_string(labelCounters++));
-			stmts->push_back(label);
-			addJump(left->nextjumps, label);
+			if (left->nextjumps->size() > 0) {
+				LabelStmt* label = new LabelStmt("l" + std::to_string(labelCounters++));
+				stmts->push_back(label);
+				addJump(left->nextjumps, label);
+			}
 
 			Var* t = new Var("t" + std::to_string( getTmpIndex()));
 			stmts->push_back(new irVarDecl(t));

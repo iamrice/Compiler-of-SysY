@@ -2252,6 +2252,8 @@ yyreturn:
 
 #include "irGen.h"
 #include "armGen.h"
+#include "flowPass.h"
+#include "blockGen.h"
 int main(int argc, const char *args[])
 {
 	//yydebug = 1;
@@ -2263,6 +2265,15 @@ int main(int argc, const char *args[])
 	if (!yyparse()) {
 		IrGen* gen = new IrGen();
 		Prog* res = gen->run(ast_root->e1);
+		
+		for (Meth* meth : *(res->meths))
+		{
+			BlockGen* bg = new BlockGen();
+			FlowPass* fp = new FlowPass();
+			bg->newGen(meth);
+			fp->run(meth);
+		}
+		
 		armGen* arm = new armGen();
 		std::list<armStmt*>* tmp = arm->run(res);
 		for (armStmt* stmt : *tmp) {

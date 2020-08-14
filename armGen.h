@@ -12,23 +12,30 @@ public:
 	sub_sp* tmp_sp;
 	std::list<armStmt*>* run(Prog* prog) {
 		std::list<armStmt*>* stmt_list = new std::list<armStmt*>();
+
+		stmt_list->push_back(new armstring(".data\n"));
 		//写global 语句
+
+		for (irStmt* stmt : *(prog->datas)) {
+			irArrayDecl* _arr = dynamic_cast<irArrayDecl*>(stmt);
+			if (_arr != nullptr) {
+				stmt_list->push_back(new armstring(".balign 4"));
+				stmt_list->push_back(new armstring(_arr->arr->name + ":"));
+				stmt_list->push_back(new armstring("    .skip " + std::to_string(_arr->arr->totalSize * 4) + "\n"));
+				//stmt_list->push_back(new armstring("=of_" + _arr->arr->name + ": .word " + _arr->arr->name + "\n"));
+			}
+			irVarDecl* _var = dynamic_cast<irVarDecl*>(stmt);
+			if (_var != nullptr) {
+				stmt_list->push_back(new armstring(".balign 4"));
+				stmt_list->push_back(new armstring(_var->var->name + ":"));
+				stmt_list->push_back(new armstring("    .word " + std::to_string(_var->var->instanceValue) + "\n"));
+
+			}
+		}
+
+		stmt_list->push_back(new armstring(".text\n"));
+
 		stmt_list->push_back(new globalStmt("main"));
-		//stmt_list->push_back(new armstring(".extern printf"));
-		/*stmt_list->push_back(new globalStmt("__aeabi_idiv"));
-		stmt_list->push_back(new globalStmt("__aeabi_idivmod"));
-		stmt_list->push_back(new globalStmt("getint"));
-		stmt_list->push_back(new globalStmt("getch"));
-		stmt_list->push_back(new globalStmt("getarray"));
-		stmt_list->push_back(new globalStmt("putint"));
-		stmt_list->push_back(new globalStmt("putch"));
-		stmt_list->push_back(new globalStmt("putarray"));
-		stmt_list->push_back(new globalStmt("putf"));
-		stmt_list->push_back(new globalStmt("starttime"));
-		stmt_list->push_back(new globalStmt("stoptime"));*/
-		/*for (irStmt* stmt : *(prog->datas)) {
-			doStmt(stmt,stmt_list);
-		}*/
 		for (Meth* func : *(prog->meths)) {
 			//1.函数名 main:
 			//2. push register
@@ -51,6 +58,8 @@ public:
 			if (func->name == "main") {
 				stmt_list->push_back(new SubInstr(r8, fp, new operand2Const(4)));
 				for (irStmt* stmt : *(prog->datas)) {
+					if (dynamic_cast<irDecl*>(stmt) != nullptr)
+						continue;
 					doStmt(stmt, stmt_list, addrCount, pushlist, poplist);
 				}
 			}
@@ -88,15 +97,21 @@ public:
 					}
 				}
 			}
-				for (irStmt* stmt : *(func->blocks->front()->stmts)) {
+				/*for (irStmt* stmt : *(func->blocks->front()->stmts)) {
+					doStmt(stmt, stmt_list, addrCount, pushlist, poplist);
+				}*/
+			for (irBlock* block : *(func->blocks)) {
+				stmt_list->push_back(new armLabel(block->label->name));
+				for (irStmt* stmt : *(block->stmts)) {
 					doStmt(stmt, stmt_list, addrCount, pushlist, poplist);
 				}
+			}
 				this->tmp_sp->address = addrCount[0];
 				//修改sp深度
 				//add sp
 				stmt_list->push_back(new armstring(".ltorg\n"));
 			}
-			//stmt_list->push_back(new armstring("fmt:\n    .asciz \"  %x  \\n\"\n.end "));
+			stmt_list->push_back(new armstring("fmt:\n    .asciz \"  %x  \\n\"\n.end "));
 			
 			return stmt_list;
 		}
@@ -135,8 +150,10 @@ public:
 				val1 = dynamic_cast<VarRval*>(binStmt->a);
 				if (val1 != nullptr) {
 					if (val1->v->if_global) {
-						stmt_list->push_back(new SubInstr(r1, r8, new operand2Const((val1->v->address) * 4)));
-						stmt_list->push_back(new loadVarStmt2(r1, r0));
+						stmt_list->push_back(new armstring("ldr r0,=" + val1->v->name));
+						stmt_list->push_back(new loadVarStmt2(r0, r0));
+						//stmt_list->push_back(new SubInstr(r1, r8, new operand2Const((val1->v->address) * 4)));
+						//stmt_list->push_back(new loadVarStmt2(r1, r0));
 					}
 					else
 						stmt_list->push_back(new loadVarStmt(val1->v->address, r0));
@@ -149,8 +166,10 @@ public:
 				val1 = dynamic_cast<VarRval*>(binStmt->b);
 				if (val1 != nullptr) {
 					if (val1->v->if_global) {
-						stmt_list->push_back(new SubInstr(r2, r8, new operand2Const((val1->v->address) * 4)));
-						stmt_list->push_back(new loadVarStmt2(r2, r1));
+						stmt_list->push_back(new armstring("ldr r1,=" + val1->v->name));
+						stmt_list->push_back(new loadVarStmt2(r1, r1));
+						//stmt_list->push_back(new SubInstr(r2, r8, new operand2Const((val1->v->address) * 4)));
+						//stmt_list->push_back(new loadVarStmt2(r2, r1));
 					}
 					else
 						stmt_list->push_back(new loadVarStmt(val1->v->address, r1));
@@ -213,15 +232,19 @@ public:
 					}
 					else if (_var != nullptr) {
 						if (_var->v->if_global) {
-							stmt_list->push_back(new SubInstr(r0, r8, new operand2Const((_var->v->address) * 4)));
-							stmt_list->push_back(new loadVarStmt2(r0, r2));
+							stmt_list->push_back(new armstring("ldr r2, =" + _var->v->name));
+							stmt_list->push_back(new loadVarStmt2(r2, r2));
+							//stmt_list->push_back(new SubInstr(r0, r8, new operand2Const((_var->v->address) * 4)));
+							//stmt_list->push_back(new loadVarStmt2(r0, r2));
 						}
 						else
 							stmt_list->push_back(new loadVarStmt(_var->v->address, r2));
 						stmt_list->push_back(new movVarStmt(r2, r1));
 						if (unary->c->if_global) {
-							stmt_list->push_back(new SubInstr(r3, r8, new operand2Const((unary->c->address) * 4)));
-							stmt_list->push_back(new strStmt2(r3, r1));
+							stmt_list->push_back(new armstring("ldr r1, =" + unary->c->name));
+							stmt_list->push_back(new strStmt2(r1, r2));
+							//stmt_list->push_back(new SubInstr(r3, r8, new operand2Const((unary->c->address) * 4)));
+							//stmt_list->push_back(new strStmt2(r3, r1));
 						}
 						else
 							stmt_list->push_back(new strStmt(r1, unary->c->address));
@@ -234,16 +257,20 @@ public:
 					}
 					else if (_var != nullptr) {
 						if (_var->v->if_global) {
-							stmt_list->push_back(new SubInstr(r0, r8, new operand2Const((_var->v->address) * 4)));
-							stmt_list->push_back(new loadVarStmt2(r0, r2));
+							stmt_list->push_back(new armstring("ldr r2, =" + _var->v->name));
+							stmt_list->push_back(new loadVarStmt2(r2, r2));
+							//stmt_list->push_back(new SubInstr(r0, r8, new operand2Const((_var->v->address) * 4)));
+							//stmt_list->push_back(new loadVarStmt2(r0, r2));
 						}
 						else
 							stmt_list->push_back(new loadVarStmt(_var->v->address, r2));
 						stmt_list->push_back(new movIntStmt(0, r1));
 						stmt_list->push_back(new SubInstr(r1, r1, new operand2Reg(r2)));
 						if (unary->c->if_global) {
-							stmt_list->push_back(new SubInstr(r3, r8, new operand2Const((unary->c->address) * 4)));
+							stmt_list->push_back(new armstring("ldr r3, =" + unary->c->name));
 							stmt_list->push_back(new strStmt2(r3, r1));
+							//stmt_list->push_back(new SubInstr(r3, r8, new operand2Const((unary->c->address) * 4)));
+							//stmt_list->push_back(new strStmt2(r3, r1));
 						}
 						else
 							stmt_list->push_back(new strStmt(r1, unary->c->address));
@@ -279,19 +306,25 @@ public:
 			arrayInitStmt* arrInit = dynamic_cast<arrayInitStmt*>(stmt);
 			if (arrInit != nullptr) {
 				//ir代码： a={0,1,2};
-				stmt_list->push_back(new loadVarStmt(arrInit->arr->arr->address, r2));
+				if (arrInit->arr->arr->if_global) {
+					stmt_list->push_back(new armstring("    ldr r2,=" + arrInit->arr->arr->name));
+				}
+				else {
+					stmt_list->push_back(new loadVarStmt(arrInit->arr->arr->address, r2));
+				}
 
 				int count = 0;
 				for (Rval* r : *(arrInit->vals)) {
-					//stmt_list->push_back(new SubInstr(r3, r2, new operand2Const((count++)*4)));
 					stmt_list->push_back(new AddInstr(r3, r2, new operand2Const((count++) * 4)));
 
 					VarRval* val1 = dynamic_cast<VarRval*>(r);
 					if (val1 != nullptr) {
 
 						if (val1->v->if_global) {
-							stmt_list->push_back(new SubInstr(r0, r8, new operand2Const((val1->v->address) * 4)));
+							stmt_list->push_back(new armstring("ldr r0, =" + val1->v->name));
 							stmt_list->push_back(new loadVarStmt2(r0, r1));
+							//stmt_list->push_back(new SubInstr(r0, r8, new operand2Const((val1->v->address) * 4)));
+							//stmt_list->push_back(new loadVarStmt2(r0, r1));
 						}
 						else
 							stmt_list->push_back(new loadVarStmt(val1->v->address, r1));
@@ -302,14 +335,15 @@ public:
 					}
 					stmt_list->push_back(new strStmt2(r3, r1));
 				}
-				/*for (int i = arrInit->vals->size(); i < arrInit->arr->arr->totalSize; i++) {
-					stmt_list->push_back(new SubInstr(r3, r2, new operand2Const((count++) * 4)));
-					stmt_list->push_back(new movIntStmt(0, r1));
-					stmt_list->push_back(new strStmt2(r3, r1));
-				}*/
 				stmt_list->push_back(new movIntStmt((arrInit->arr->arr->totalSize - arrInit->vals->size()) * 4, r2));
 				stmt_list->push_back(new movIntStmt(0, r1));
-				stmt_list->push_back(new SubInstr(r0, fp, new operand2Const((arrInit->arr->arr->address - arrInit->vals->size()) * 4)));
+				//stmt_list->push_back(new SubInstr(r0, fp, new operand2Const((arrInit->arr->arr->address - arrInit->vals->size()) * 4)));
+				if(arrInit->arr->arr->if_global)
+					stmt_list->push_back(new armstring("    ldr r0,=" + arrInit->arr->arr->name));
+				else {
+					stmt_list->push_back(new loadVarStmt(arrInit->arr->arr->address, r0));
+				}					
+				stmt_list->push_back(new AddInstr(r0, r0, new operand2Const(arrInit->vals->size() * 4)));
 				stmt_list->push_back(new blJump("memset"));
 				pushlist->insert(lr);
 				poplist->insert(pc);
@@ -352,7 +386,12 @@ public:
 				if (intFunc->name == "getarray") {
 					arrayRval* val3 = dynamic_cast<arrayRval*>(intFunc->paramR->front());
 					if (val3 != nullptr) {
-						stmt_list->push_back(new loadVarStmt(val3->v->address, r0));
+						if (val3->v->if_global) {
+							stmt_list->push_back(new armstring("    ldr r0,=" + val3->v->name));
+						}
+						else {
+							stmt_list->push_back(new loadVarStmt(val3->v->address, r0));
+						}
 					}
 					stmt_list->push_back(new blJump(intFunc->name));
 					stmt_list->push_back(new strStmt(r0, intFunc->a->address));
@@ -364,8 +403,10 @@ public:
 					VarRval* val1 = dynamic_cast<VarRval*>(r);
 					if (val1 != nullptr) {
 						if (val1->v->if_global) {
-							stmt_list->push_back(new SubInstr(r0, r8, new operand2Const((val1->v->address) * 4)));
+							stmt_list->push_back(new armstring("ldr r0, =" + val1->v->name));
 							stmt_list->push_back(new loadVarStmt2(r0, r1));
+							//stmt_list->push_back(new SubInstr(r0, r8, new operand2Const((val1->v->address) * 4)));
+							//stmt_list->push_back(new loadVarStmt2(r0, r1));
 						}
 						else
 							stmt_list->push_back(new loadVarStmt(val1->v->address, r1));
@@ -380,18 +421,14 @@ public:
 					arrayRval* val3 = dynamic_cast<arrayRval*>(r);
 					if (val3 != nullptr) {
 						if (val3->v->if_global) {
-							stmt_list->push_back(new SubInstr(r2, r8, new operand2Const((val3->v->address) * 4)));
-							stmt_list->push_back(new loadVarStmt2(r2, r1));
+							stmt_list->push_back(new armstring("    ldr r1,=" + val3->v->name));
 						}
 						else {
-							stmt_list->push_back(new SubInstr(r2, fp, new operand2Const((val3->v->address + 1) * 4)));
-							stmt_list->push_back(new loadVarStmt2(r2, r1));
+							stmt_list->push_back(new loadVarStmt(val3->v->address, r1));
+							//stmt_list->push_back(new SubInstr(r2, fp, new operand2Const((val3->v->address + 1) * 4)));
+							//stmt_list->push_back(new loadVarStmt2(r2, r1));
 						}
 						stmt_list->push_back(new strStmt3(r1, count++));
-						/*for (int i = 0; i < val3->v->totalSize; i++) {
-							stmt_list->push_back(new loadVarStmt(val3->v->address + i, r1));
-							stmt_list->push_back(new strStmt3(r1, count++));
-						}*/
 					}
 				}
 				stmt_list->push_back(new blJump(intFunc->name));
@@ -404,22 +441,38 @@ public:
 				pushlist->insert(lr);
 				poplist->insert(pc);
 				//1.把参数存进寄存器 2.bl跳转
+				if (voidFunc->name == "cout") {
+					Rval* r = voidFunc->paramR->front();
+					VarRval* val1 = dynamic_cast<VarRval*>(r);
+					if (val1->v->if_global) {
+						stmt_list->push_back(new armstring("ldr r0, =" + val1->v->name));
+						stmt_list->push_back(new loadVarStmt2(r0, r1));
+					}
+					else
+						stmt_list->push_back(new loadVarStmt(val1->v->address, r1));
+					//stmt_list->push_back(new loadVarStmt(val1->v->address, r1));
+					stmt_list->push_back(new armstring("    ldr r0,=fmt"));
+					stmt_list->push_back(new blJump("printf"));
+					return;
+				}
 				if (voidFunc->name == "putint" || voidFunc->name == "putch") {
 					Rval* r = voidFunc->paramR->front();
 					VarRval* val1 = dynamic_cast<VarRval*>(r);
 					if (val1 != nullptr) {
-						stmt_list->push_back(new loadVarStmt(val1->v->address, r0));
-						//stmt_list->push_back(new loadVarStmt(val1->v->address, r1));
-						//stmt_list->push_back(new armstring("    ldr r0,=fmt"));
+						if (val1->v->if_global) {
+							stmt_list->push_back(new armstring("ldr r0, =" + val1->v->name));
+							stmt_list->push_back(new loadVarStmt2(r0, r0));
+							//stmt_list->push_back(new SubInstr(r1, r8, new operand2Const((val1->v->address) * 4)));
+							//stmt_list->push_back(new loadVarStmt2(r1, r0));
+						}
+						else
+							stmt_list->push_back(new loadVarStmt(val1->v->address, r0));
 					}
 					IntLitRval* val2 = dynamic_cast<IntLitRval*>(r);
 					if (val2 != nullptr) {
 						stmt_list->push_back(new movIntStmt(val2->i, r0));
-						//stmt_list->push_back(new movIntStmt(val2->i,r1));
-						//stmt_list->push_back(new armstring("    ldr r0,=fmt"));
 					}
 					stmt_list->push_back(new blJump(voidFunc->name));
-					//stmt_list->push_back(new blJump("printf"));
 					return;
 				}
 				if (voidFunc->name == "starttime" || voidFunc->name == "stoptime") {
@@ -435,8 +488,10 @@ public:
 					VarRval* val1 = dynamic_cast<VarRval*>(v1);
 					if (val1 != nullptr) {
 						if (val1->v->if_global) {
-							stmt_list->push_back(new SubInstr(r1, r8, new operand2Const((val1->v->address) * 4)));
-							stmt_list->push_back(new loadVarStmt2(r1, r0));
+							stmt_list->push_back(new armstring("ldr r0, =" + val1->v->name));
+							stmt_list->push_back(new loadVarStmt2(r0, r0));
+							//stmt_list->push_back(new SubInstr(r1, r8, new operand2Const((val1->v->address) * 4)));
+							//stmt_list->push_back(new loadVarStmt2(r1, r0));
 						}
 						else
 							stmt_list->push_back(new loadVarStmt(val1->v->address, r0));
@@ -449,12 +504,14 @@ public:
 					arrayRval* val3 = dynamic_cast<arrayRval*>(v2);
 					if (val3 != nullptr) {
 						if (val3->v->if_global) {
-							stmt_list->push_back(new SubInstr(r2, r8, new operand2Const((val3->v->address) * 4)));
-							stmt_list->push_back(new loadVarStmt2(r2, r1));
+							//stmt_list->push_back(new SubInstr(r2, r8, new operand2Const((val3->v->address) * 4)));
+							//stmt_list->push_back(new loadVarStmt2(r2, r1));
+							stmt_list->push_back(new armstring("    ldr r1,=" + val3->v->name));
 						}
 						else {
-							stmt_list->push_back(new SubInstr(r2, fp, new operand2Const((val3->v->address + 1) * 4)));
-							stmt_list->push_back(new loadVarStmt2(r2, r1));
+							stmt_list->push_back(new loadVarStmt(val3->v->address, r1));
+							//stmt_list->push_back(new SubInstr(r2, fp, new operand2Const((val3->v->address + 1) * 4)));
+							//stmt_list->push_back(new loadVarStmt2(r2, r1));
 						}
 					}
 
@@ -466,8 +523,10 @@ public:
 					VarRval* val1 = dynamic_cast<VarRval*>(r);
 					if (val1 != nullptr) {
 						if (val1->v->if_global) {
-							stmt_list->push_back(new SubInstr(r0, r8, new operand2Const((val1->v->address) * 4)));
+							stmt_list->push_back(new armstring("ldr r0, =" + val1->v->name));
 							stmt_list->push_back(new loadVarStmt2(r0, r1));
+							//stmt_list->push_back(new SubInstr(r0, r8, new operand2Const((val1->v->address) * 4)));
+							//stmt_list->push_back(new loadVarStmt2(r0, r1));
 						}
 						else
 							stmt_list->push_back(new loadVarStmt(val1->v->address, r1));
@@ -481,12 +540,14 @@ public:
 					arrayRval* val3 = dynamic_cast<arrayRval*>(r);
 					if (val3 != nullptr) {
 						if (val3->v->if_global) {
-							stmt_list->push_back(new SubInstr(r2, r8, new operand2Const((val3->v->address) * 4)));
-							stmt_list->push_back(new loadVarStmt2(r2, r1));
+							//stmt_list->push_back(new SubInstr(r2, r8, new operand2Const((val3->v->address) * 4)));
+							//stmt_list->push_back(new loadVarStmt2(r2, r1));
+							stmt_list->push_back(new armstring("    ldr r1,=" + val3->v->name));
 						}
 						else {
-							stmt_list->push_back(new SubInstr(r2, fp, new operand2Const((val3->v->address + 1) * 4)));
-							stmt_list->push_back(new loadVarStmt2(r2, r1));
+							stmt_list->push_back(new loadVarStmt(val3->v->address, r1));
+							//stmt_list->push_back(new SubInstr(r2, fp, new operand2Const((val3->v->address + 1) * 4)));
+							//stmt_list->push_back(new loadVarStmt2(r2, r1));
 						}
 						stmt_list->push_back(new strStmt3(r1, count++));
 						/*for (int i = 0; i < val3->v->totalSize; i++) {
@@ -516,8 +577,10 @@ public:
 				VarRval* t2 = dynamic_cast<VarRval*>(return2->val);
 				if (t2 != nullptr) {
 					if (t2->v->if_global) {
-						stmt_list->push_back(new SubInstr(r1, r8, new operand2Const((t2->v->address) * 4)));
-						stmt_list->push_back(new loadVarStmt2(r1, r0));
+						stmt_list->push_back(new armstring("ldr r0, =" + t2->v->name));
+						stmt_list->push_back(new loadVarStmt2(r0, r0));
+						//stmt_list->push_back(new SubInstr(r1, r8, new operand2Const((t2->v->address) * 4)));
+						//stmt_list->push_back(new loadVarStmt2(r1, r0));
 
 					}
 					else {
@@ -534,7 +597,8 @@ public:
 		void doNumberassign(numberAssignStmt* stmt, std::list<armStmt*>* stmt_list) {
 
 			if (stmt->def->if_global) {
-				stmt_list->push_back(new SubInstr(r3, r8, new operand2Const((stmt->def->address) * 4)));
+				stmt_list->push_back(new armstring("ldr r3, =" + stmt->def->name));
+				//stmt_list->push_back(new SubInstr(r3, r8, new operand2Const((stmt->def->address) * 4)));
 			}
 			IntLitRval* t1 = dynamic_cast<IntLitRval*>(stmt->src);
 			if (t1 != nullptr) {
@@ -547,8 +611,10 @@ public:
 			VarRval* t2 = dynamic_cast<VarRval*>(stmt->src);
 			if (t2 != nullptr) {
 				if (t2->v->if_global) {
-					stmt_list->push_back(new SubInstr(r1, r8, new operand2Const((t2->v->address) * 4)));
-					stmt_list->push_back(new loadVarStmt2(r1, r2));
+					stmt_list->push_back(new armstring("ldr r2, =" + t2->v->name));
+					stmt_list->push_back(new loadVarStmt2(r2, r2));
+					//stmt_list->push_back(new SubInstr(r1, r8, new operand2Const((t2->v->address) * 4)));
+					//stmt_list->push_back(new loadVarStmt2(r1, r2));
 					if (stmt->def->if_global)
 						stmt_list->push_back(new strStmt2(r3, r2));
 					else
@@ -573,8 +639,10 @@ public:
 			VarRval* t2 = dynamic_cast<VarRval*>(cmp->a);
 			if (t2 != nullptr) {
 				if (t2->v->if_global) {
-					stmt_list->push_back(new SubInstr(r0, r8, new operand2Const((t2->v->address) * 4)));
-					stmt_list->push_back(new loadVarStmt2(r0, r1));
+					stmt_list->push_back(new armstring("ldr r1, =" + t2->v->name));
+					stmt_list->push_back(new loadVarStmt2(r1, r1));
+					//stmt_list->push_back(new SubInstr(r0, r8, new operand2Const((t2->v->address) * 4)));
+					//stmt_list->push_back(new loadVarStmt2(r0, r1));
 				}
 				else
 					stmt_list->push_back(new loadVarStmt(t2->v->address, r1));
@@ -587,8 +655,10 @@ public:
 			t2 = dynamic_cast<VarRval*>(cmp->b);
 			if (t2 != nullptr) {
 				if (t2->v->if_global) {
-					stmt_list->push_back(new SubInstr(r0, r8, new operand2Const((t2->v->address) * 4)));
-					stmt_list->push_back(new loadVarStmt2(r0, r2));
+					stmt_list->push_back(new armstring("ldr r2, =" + t2->v->name));
+					stmt_list->push_back(new loadVarStmt2(r2, r2));
+					//stmt_list->push_back(new SubInstr(r0, r8, new operand2Const((t2->v->address) * 4)));
+					//stmt_list->push_back(new loadVarStmt2(r0, r2));
 				}
 				else
 					stmt_list->push_back(new loadVarStmt(t2->v->address, r2));
@@ -608,8 +678,10 @@ public:
 				VarRval* v2 = dynamic_cast<VarRval*>(val);
 				if (v2 != nullptr) {
 					if (v2->v->if_global) {
-						stmt_list->push_back(new SubInstr(r0, r8, new operand2Const((v2->v->address) * 4)));
+						stmt_list->push_back(new armstring("ldr r0, =" + v2->v->name));
 						stmt_list->push_back(new loadVarStmt2(r0, r1));
+						//stmt_list->push_back(new SubInstr(r0, r8, new operand2Const((v2->v->address) * 4)));
+						//stmt_list->push_back(new loadVarStmt2(r0, r1));
 					}
 					else
 						stmt_list->push_back(new loadVarStmt(v2->v->address, r1));
@@ -622,8 +694,9 @@ public:
 				stmt_list->push_back(new movIntStmt(4, r3));
 				stmt_list->push_back(new MulInstr(r2, r1, new operand2Reg(r3)));
 				if (arrAssign1->arr->if_global) {
-					stmt_list->push_back(new SubInstr(r3, r8, new operand2Const((arrAssign1->arr->address) * 4)));
-					stmt_list->push_back(new loadVarStmt2(r3, r1));
+					//stmt_list->push_back(new SubInstr(r3, r8, new operand2Const((arrAssign1->arr->address) * 4)));
+					//stmt_list->push_back(new loadVarStmt2(r3, r1));
+					stmt_list->push_back(new armstring("    ldr r1,=" + arrAssign1->arr->name));
 				}
 				else {
 					stmt_list->push_back(new loadVarStmt(arrAssign1->arr->address, r1));
@@ -653,8 +726,10 @@ public:
 				VarRval* v2 = dynamic_cast<VarRval*>(val);
 				if (v2 != nullptr) {
 					if (v2->v->if_global) {
-						stmt_list->push_back(new SubInstr(r0, r8, new operand2Const((v2->v->address) * 4)));
-						stmt_list->push_back(new loadVarStmt2(r0, r3));
+						stmt_list->push_back(new armstring("ldr r3, =" + v2->v->name));
+						stmt_list->push_back(new loadVarStmt2(r3, r3));
+						//stmt_list->push_back(new SubInstr(r0, r8, new operand2Const((v2->v->address) * 4)));
+						//stmt_list->push_back(new loadVarStmt2(r0, r3));
 					}
 					else
 						stmt_list->push_back(new loadVarStmt(v2->v->address, r3));
@@ -672,8 +747,10 @@ public:
 				v2 = dynamic_cast<VarRval*>(val2);
 				if (v2 != nullptr) {
 					if (v2->v->if_global) {
-						stmt_list->push_back(new SubInstr(r0, r8, new operand2Const((v2->v->address) * 4)));
-						stmt_list->push_back(new loadVarStmt2(r0, r3));
+						stmt_list->push_back(new armstring("ldr r3, =" + v2->v->name));
+						stmt_list->push_back(new loadVarStmt2(r3, r3));
+						//stmt_list->push_back(new SubInstr(r0, r8, new operand2Const((v2->v->address) * 4)));
+						//stmt_list->push_back(new loadVarStmt2(r0, r3));
 					}
 					else
 						stmt_list->push_back(new loadVarStmt(v2->v->address, r3));
@@ -690,8 +767,9 @@ public:
 				stmt_list->push_back(new movIntStmt(4, r3));
 				stmt_list->push_back(new MulInstr(r2, r1, new operand2Reg(r3)));
 				if (arrAssign1->arr->if_global) {
-					stmt_list->push_back(new SubInstr(r3, r8, new operand2Const((arrAssign1->arr->address) * 4)));
-					stmt_list->push_back(new loadVarStmt2(r3, r1));
+					//stmt_list->push_back(new SubInstr(r3, r8, new operand2Const((arrAssign1->arr->address) * 4)));
+					//stmt_list->push_back(new loadVarStmt2(r3, r1));
+					stmt_list->push_back(new armstring("    ldr r1,=" + arrAssign1->arr->name));
 				}
 				else {
 					stmt_list->push_back(new loadVarStmt(arrAssign1->arr->address, r1));
@@ -725,8 +803,10 @@ public:
 				VarRval* v2 = dynamic_cast<VarRval*>(val);
 				if (v2 != nullptr) {
 					if (v2->v->if_global) {
-						stmt_list->push_back(new SubInstr(r0, r8, new operand2Const((v2->v->address) * 4)));
-						stmt_list->push_back(new loadVarStmt2(r0, r3));
+						stmt_list->push_back(new armstring("ldr r3, =" + v2->v->name));
+						stmt_list->push_back(new loadVarStmt2(r3, r3));
+						//stmt_list->push_back(new SubInstr(r0, r8, new operand2Const((v2->v->address) * 4)));
+						//stmt_list->push_back(new loadVarStmt2(r0, r3));
 					}
 					else
 						stmt_list->push_back(new loadVarStmt(v2->v->address, r3));
@@ -744,8 +824,10 @@ public:
 				v2 = dynamic_cast<VarRval*>(val2);
 				if (v2 != nullptr) {
 					if (v2->v->if_global) {
-						stmt_list->push_back(new SubInstr(r0, r8, new operand2Const((v2->v->address) * 4)));
-						stmt_list->push_back(new loadVarStmt2(r0, r3));
+						stmt_list->push_back(new armstring("ldr r3, =" + v2->v->name));
+						stmt_list->push_back(new loadVarStmt2(r3, r3));
+						//stmt_list->push_back(new SubInstr(r0, r8, new operand2Const((v2->v->address) * 4)));
+						//stmt_list->push_back(new loadVarStmt2(r0, r3));
 					}
 					else
 						stmt_list->push_back(new loadVarStmt(v2->v->address, r3));
@@ -762,8 +844,10 @@ public:
 				v2 = dynamic_cast<VarRval*>(val3);
 				if (v2 != nullptr) {
 					if (v2->v->if_global) {
-						stmt_list->push_back(new SubInstr(r0, r8, new operand2Const((v2->v->address) * 4)));
-						stmt_list->push_back(new loadVarStmt2(r0, r3));
+						stmt_list->push_back(new armstring("ldr r3, =" + v2->v->name));
+						stmt_list->push_back(new loadVarStmt2(r3, r3));
+						//stmt_list->push_back(new SubInstr(r0, r8, new operand2Const((v2->v->address) * 4)));
+						//stmt_list->push_back(new loadVarStmt2(r0, r3));
 					}
 					else
 						stmt_list->push_back(new loadVarStmt(v2->v->address, r3));
@@ -781,8 +865,9 @@ public:
 				stmt_list->push_back(new movIntStmt(4, r3));
 				stmt_list->push_back(new MulInstr(r2, r1, new operand2Reg(r3)));
 				if (arrAssign1->arr->if_global) {
-					stmt_list->push_back(new SubInstr(r3, r8, new operand2Const((arrAssign1->arr->address) * 4)));
-					stmt_list->push_back(new loadVarStmt2(r3, r1));
+					//stmt_list->push_back(new SubInstr(r3, r8, new operand2Const((arrAssign1->arr->address) * 4)));
+					//stmt_list->push_back(new loadVarStmt2(r3, r1));
+					stmt_list->push_back(new armstring("    ldr r1,=" + arrAssign1->arr->name));
 				}
 				else {
 					stmt_list->push_back(new loadVarStmt(arrAssign1->arr->address, r1));
@@ -807,8 +892,10 @@ public:
 				VarRval* v2 = dynamic_cast<VarRval*>(val);
 				if (v2 != nullptr) {
 					if (v2->v->if_global) {
-						stmt_list->push_back(new SubInstr(r0, r8, new operand2Const((v2->v->address) * 4)));
-						stmt_list->push_back(new loadVarStmt2(r0, r1));
+						stmt_list->push_back(new armstring("ldr r1, =" + v2->v->name));
+						stmt_list->push_back(new loadVarStmt2(r1, r1));
+						//stmt_list->push_back(new SubInstr(r0, r8, new operand2Const((v2->v->address) * 4)));
+						//stmt_list->push_back(new loadVarStmt2(r0, r1));
 					}
 					else
 						stmt_list->push_back(new loadVarStmt(v2->v->address, r1));
@@ -821,8 +908,9 @@ public:
 				stmt_list->push_back(new movIntStmt(4, r3));
 				stmt_list->push_back(new MulInstr(r2, r1, new operand2Reg(r3)));
 				if (arrAssign1->arr->if_global) {
-					stmt_list->push_back(new SubInstr(r3, r8, new operand2Const((arrAssign1->arr->address) * 4)));
-					stmt_list->push_back(new loadVarStmt2(r3, r1));
+					//stmt_list->push_back(new SubInstr(r3, r8, new operand2Const((arrAssign1->arr->address) * 4)));
+					//stmt_list->push_back(new loadVarStmt2(r3, r1));
+					stmt_list->push_back(new armstring("    ldr r1,=" + arrAssign1->arr->name));
 				}
 				else {
 					stmt_list->push_back(new loadVarStmt(arrAssign1->arr->address, r1));
@@ -837,6 +925,7 @@ public:
 				}
 				v2 = dynamic_cast<VarRval*>(val);
 				if (v2 != nullptr) {
+					//if(v2->v->if_global)
 					stmt_list->push_back(new loadVarStmt(v2->v->address, r2));
 				}
 				stmt_list->push_back(new strStmt2(r1, r2));
@@ -861,8 +950,10 @@ public:
 				VarRval* v2 = dynamic_cast<VarRval*>(val);
 				if (v2 != nullptr) {
 					if (v2->v->if_global) {
-						stmt_list->push_back(new SubInstr(r0, r8, new operand2Const((v2->v->address) * 4)));
-						stmt_list->push_back(new loadVarStmt2(r0, r3));
+						stmt_list->push_back(new armstring("ldr r3, =" + v2->v->name));
+						stmt_list->push_back(new loadVarStmt2(r3, r3));
+						//stmt_list->push_back(new SubInstr(r0, r8, new operand2Const((v2->v->address) * 4)));
+						//stmt_list->push_back(new loadVarStmt2(r0, r3));
 					}
 					else
 						stmt_list->push_back(new loadVarStmt(v2->v->address, r3));
@@ -880,8 +971,10 @@ public:
 				v2 = dynamic_cast<VarRval*>(val2);
 				if (v2 != nullptr) {
 					if (v2->v->if_global) {
-						stmt_list->push_back(new SubInstr(r0, r8, new operand2Const((v2->v->address) * 4)));
-						stmt_list->push_back(new loadVarStmt2(r0, r3));
+						stmt_list->push_back(new armstring("ldr r3, =" + v2->v->name));
+						stmt_list->push_back(new loadVarStmt2(r3, r3));
+						//stmt_list->push_back(new SubInstr(r0, r8, new operand2Const((v2->v->address) * 4)));
+						//stmt_list->push_back(new loadVarStmt2(r0, r3));
 					}
 					else
 						stmt_list->push_back(new loadVarStmt(v2->v->address, r3));
@@ -897,8 +990,9 @@ public:
 				stmt_list->push_back(new movIntStmt(4, r3));
 				stmt_list->push_back(new MulInstr(r2, r1, new operand2Reg(r3)));
 				if (arrAssign1->arr->if_global) {
-					stmt_list->push_back(new SubInstr(r3, r8, new operand2Const((arrAssign1->arr->address) * 4)));
-					stmt_list->push_back(new loadVarStmt2(r3, r1));
+					//stmt_list->push_back(new SubInstr(r3, r8, new operand2Const((arrAssign1->arr->address) * 4)));
+					//stmt_list->push_back(new loadVarStmt2(r3, r1));
+					stmt_list->push_back(new armstring("    ldr r1,=" + arrAssign1->arr->name));
 				}
 				else {
 					stmt_list->push_back(new loadVarStmt(arrAssign1->arr->address, r1));
@@ -940,8 +1034,10 @@ public:
 				VarRval* v2 = dynamic_cast<VarRval*>(val);
 				if (v2 != nullptr) {
 					if (v2->v->if_global) {
-						stmt_list->push_back(new SubInstr(r0, r8, new operand2Const((v2->v->address) * 4)));
-						stmt_list->push_back(new loadVarStmt2(r0, r3));
+						stmt_list->push_back(new armstring("ldr r3, =" + v2->v->name));
+						stmt_list->push_back(new loadVarStmt2(r3, r3));
+						//stmt_list->push_back(new SubInstr(r0, r8, new operand2Const((v2->v->address) * 4)));
+						//stmt_list->push_back(new loadVarStmt2(r0, r3));
 					}
 					else
 						stmt_list->push_back(new loadVarStmt(v2->v->address, r3));
@@ -959,8 +1055,10 @@ public:
 				v2 = dynamic_cast<VarRval*>(val2);
 				if (v2 != nullptr) {
 					if (v2->v->if_global) {
-						stmt_list->push_back(new SubInstr(r0, r8, new operand2Const((v2->v->address) * 4)));
-						stmt_list->push_back(new loadVarStmt2(r0, r3));
+						stmt_list->push_back(new armstring("ldr r3, =" + v2->v->name));
+						stmt_list->push_back(new loadVarStmt2(r3, r3));
+						//stmt_list->push_back(new SubInstr(r0, r8, new operand2Const((v2->v->address) * 4)));
+						//stmt_list->push_back(new loadVarStmt2(r0, r3));
 					}
 					else
 						stmt_list->push_back(new loadVarStmt(v2->v->address, r3));
@@ -977,8 +1075,10 @@ public:
 				v2 = dynamic_cast<VarRval*>(val3);
 				if (v2 != nullptr) {
 					if (v2->v->if_global) {
-						stmt_list->push_back(new SubInstr(r0, r8, new operand2Const((v2->v->address) * 4)));
-						stmt_list->push_back(new loadVarStmt2(r0, r3));
+						stmt_list->push_back(new armstring("ldr r3, =" + v2->v->name));
+						stmt_list->push_back(new loadVarStmt2(r3, r3));
+						//stmt_list->push_back(new SubInstr(r0, r8, new operand2Const((v2->v->address) * 4)));
+						//stmt_list->push_back(new loadVarStmt2(r0, r3));
 					}
 					else
 						stmt_list->push_back(new loadVarStmt(v2->v->address, r3));
@@ -993,8 +1093,9 @@ public:
 				stmt_list->push_back(new movIntStmt(4, r3));
 				stmt_list->push_back(new MulInstr(r2, r1, new operand2Reg(r3)));
 				if (arrAssign1->arr->if_global) {
-					stmt_list->push_back(new SubInstr(r3, r8, new operand2Const((arrAssign1->arr->address) * 4)));
-					stmt_list->push_back(new loadVarStmt2(r3, r1));
+					//stmt_list->push_back(new SubInstr(r3, r8, new operand2Const((arrAssign1->arr->address) * 4)));
+					//stmt_list->push_back(new loadVarStmt2(r3, r1));
+					stmt_list->push_back(new armstring("    ldr r1,=" + arrAssign1->arr->name));
 				}
 				else {
 					stmt_list->push_back(new loadVarStmt(arrAssign1->arr->address, r1));
